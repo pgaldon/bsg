@@ -1,0 +1,2 @@
+# bsg
+BSG boardgame
