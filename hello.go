@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 var templates = template.Must(template.ParseFiles("templates/edit.html", "templates/view.html", "templates/index.html"))
@@ -31,9 +32,9 @@ func listPages()  (*IndexPage, error){
 	if err != nil {
 		return nil, err
 	}
-	var cleanFiles = []string{""}
+	var cleanFiles []string
 	for _, f := range files{
-		cleanFiles = append(cleanFiles, f.Name())
+		cleanFiles = append(cleanFiles, strings.Split(f.Name(), ".")[0])
 	}
 
 	return &IndexPage{Title: "Welcome Mofos", Titles: cleanFiles}, nil
