@@ -1,0 +1,9 @@
+<h1>{{.Title}}</h1>
+
+<div>{{printf "%s" .Titles}}</div>
+
+    <ul>
+        {{range .Titles}}
+            <li><p>[<a href="/view/{{.}}">{{.}}</a>]</p></li>
+        {{end}}
+    </ul>
