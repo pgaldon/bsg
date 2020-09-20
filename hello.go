@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/go-redis/redis"
 )
 
 var templates = template.Must(template.ParseFiles("templates/edit.html", "templates/view.html", "templates/index.html"))
@@ -18,8 +21,57 @@ type Page struct {
 }
 
 type IndexPage struct {
-	Title string
+	Title  string
 	Titles []string
+}
+
+type redisStore struct {
+	client *redis.Client
+}
+
+func NewRedisStore() Store {
+	client := redis.NewClient(&redis.Options{
+		Addr:     "192.168.1.28:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	_, err := client.Ping().Result()
+	if err != nil {
+		log.Fatalf("Failed to ping Redis: %v", err)
+	}
+
+	return &redisStore{
+		client: client,
+	}
+}
+
+func (r redisStore) Set(id string, session Session) error {
+	bs, err := json.Marshal(session)
+	if err != nil {
+		return errors.Wrap(err, "failed to save session to redis")
+	}
+
+	if err := r.client.Set(id, bs, 0).Err(); err != nil {
+		return errors.Wrap(err, "failed to save session to redis")
+	}
+
+	return nil
+}
+
+func (r redisStore) Get(id string) (Session, error) {
+	var session Session
+
+	bs, err := r.client.Get(id).Bytes()
+	if err != nil {
+		return session, errors.Wrap(err, "failed to get session from redis")
+	}
+
+	if err := json.Unmarshal(bs, &session); err != nil {
+		return session, errors.Wrap(err, "failed to unmarshall session data")
+	}
+
+	return session, nil
 }
 
 func (p *Page) save() error {
@@ -27,13 +79,17 @@ func (p *Page) save() error {
 	return ioutil.WriteFile(filename, p.Body, 0600)
 }
 
-func listPages()  (*IndexPage, error){
+func welcome() (*IndexPage, error) {
+	return &IndexPage{Title: "Welcome to BSG"}, nil
+}
+
+func listPages() (*IndexPage, error) {
 	files, err := ioutil.ReadDir("pages/")
 	if err != nil {
 		return nil, err
 	}
 	var cleanFiles []string
-	for _, f := range files{
+	for _, f := range files {
 		cleanFiles = append(cleanFiles, strings.Split(f.Name(), ".")[0])
 	}
 
@@ -56,10 +112,10 @@ func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
 	}
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request)  {
-	pages, err := listPages()
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	page, err := welcome()
 
-	err = templates.ExecuteTemplate(w, "index.html", pages)
+	err = templates.ExecuteTemplate(w, "index.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -105,6 +161,8 @@ func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.Handl
 }
 
 func main() {
+	sessionsStore = sessions.NewRedisStore()
+	http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("images"))))
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/view/", makeHandler(viewHandler))
 	http.HandleFunc("/edit/", makeHandler(editHandler))
